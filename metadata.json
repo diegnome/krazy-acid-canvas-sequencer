@@ -1,0 +1,5 @@
+{
+  "name": "Web Audio Sequencer",
+  "description": "A fully functional, responsive 16-step sequencer using the Web Audio API with synthesized drum sounds.",
+  "requestFramePermissions": []
+}
