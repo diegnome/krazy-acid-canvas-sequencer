@@ -1,33 +1,26 @@
-export interface BassParams {
-  cutoff: number;
-  resonance: number;
-  envMod: number;
-  decay: number;
-  waveform: 'sawtooth' | 'square';
-}
-
-export class AudioEngine {
-  ctx: AudioContext | null = null;
-  drumBus: GainNode | null = null;
-  bassGain: GainNode | null = null;
-  distortion: WaveShaperNode | null = null;
-  saturation: WaveShaperNode | null = null;
-  bitcrusher: ScriptProcessorNode | null = null;
-  
-  // Lead Synth
-  leadOsc: OscillatorNode | null = null;
-  formant1: BiquadFilterNode | null = null;
-  formant2: BiquadFilterNode | null = null;
-  formant3: BiquadFilterNode | null = null;
-  leadGain: GainNode | null = null;
-  
-  leadNoiseSource: AudioBufferSourceNode | null = null;
-  leadNoiseFilter: BiquadFilterNode | null = null;
-  leadNoiseGain: GainNode | null = null;
+class AudioEngine {
+  constructor() {
+    this.ctx = null;
+    this.drumBus = null;
+    this.bassGain = null;
+    this.distortion = null;
+    this.saturation = null;
+    this.bitcrusher = null;
+    
+    this.leadOsc = null;
+    this.formant1 = null;
+    this.formant2 = null;
+    this.formant3 = null;
+    this.leadGain = null;
+    
+    this.leadNoiseSource = null;
+    this.leadNoiseFilter = null;
+    this.leadNoiseGain = null;
+  }
 
   init() {
     if (!this.ctx) {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       this.ctx = new AudioContextClass();
       
       this.drumBus = this.ctx.createGain();
@@ -41,7 +34,11 @@ export class AudioEngine {
       this.updateSaturation(0);
       this.updateBitcrusher(0);
 
-      this.drumBus.connect(this.distortion).connect(this.saturation).connect(this.bitcrusher).connect(this.ctx.destination);
+      this.drumBus.connect(this.distortion);
+      this.distortion.connect(this.saturation);
+      this.saturation.connect(this.bitcrusher);
+      this.bitcrusher.connect(this.ctx.destination);
+      
       this.bassGain.connect(this.ctx.destination);
       
       // Init Lead Synth
@@ -56,7 +53,6 @@ export class AudioEngine {
       this.formant2.type = 'bandpass';
       this.formant3.type = 'bandpass';
       
-      // High resonance for vocal formants
       this.formant1.Q.value = 20;
       this.formant2.Q.value = 20;
       this.formant3.Q.value = 20;
@@ -72,7 +68,6 @@ export class AudioEngine {
       this.formant3.connect(this.leadGain);
       
       this.leadGain.connect(this.ctx.destination);
-      
       this.leadOsc.start();
       
       // Init Lead Noise for Consonants
@@ -100,7 +95,7 @@ export class AudioEngine {
     }
   }
 
-  updateDistortion(amount: number) {
+  updateDistortion(amount) {
     if (!this.distortion) return;
     const curve = new Float32Array(44100);
     const deg = Math.PI / 180;
@@ -111,7 +106,7 @@ export class AudioEngine {
     this.distortion.curve = curve;
   }
 
-  updateSaturation(amount: number) {
+  updateSaturation(amount) {
     if (!this.saturation) return;
     const curve = new Float32Array(44100);
     for (let i = 0; i < 44100; i++) {
@@ -121,7 +116,7 @@ export class AudioEngine {
     this.saturation.curve = curve;
   }
 
-  updateBitcrusher(amount: number) {
+  updateBitcrusher(amount) {
     if (!this.bitcrusher) return;
     const bitDepth = Math.max(1, 16 - amount * 15);
     this.bitcrusher.onaudioprocess = (e) => {
@@ -134,7 +129,7 @@ export class AudioEngine {
     };
   }
 
-  duckBass(time: number) {
+  duckBass(time) {
     if (!this.bassGain || !this.ctx) return;
     this.bassGain.gain.cancelScheduledValues(time);
     this.bassGain.gain.setValueAtTime(this.bassGain.gain.value, time);
@@ -142,7 +137,7 @@ export class AudioEngine {
     this.bassGain.gain.linearRampToValueAtTime(1, time + 0.1);
   }
 
-  scheduleLead(time: number, stepDuration: number, stepIdx: number, totalSteps: number, pitchData: Float32Array, gateData: Float32Array, params: BassParams, syllable: string) {
+  scheduleLead(time, stepDuration, stepIdx, totalSteps, pitchData, gateData, params, syllable) {
     if (!this.leadOsc || !this.leadGain || !this.formant1 || !this.formant2 || !this.formant3 || !this.ctx) return;
     
     const resolution = pitchData.length;
@@ -157,7 +152,6 @@ export class AudioEngine {
       }
     }
     
-    // Cancel previous scheduled values for this time window
     this.leadOsc.frequency.cancelScheduledValues(time);
     this.formant1.frequency.cancelScheduledValues(time);
     this.formant2.frequency.cancelScheduledValues(time);
@@ -175,12 +169,12 @@ export class AudioEngine {
       return;
     }
     
-    const minFreq = 65.41; // C2
-    const maxFreq = 1046.5; // C6
+    const minFreq = 65.41;
+    const maxFreq = 1046.5;
     
     this.leadOsc.type = params.waveform;
     
-    const parseSyllable = (text: string) => {
+    const parseSyllable = (text) => {
       const lower = text.toLowerCase().replace(/[^a-z]/g, '');
       if (!lower) return { onset: '', vowel: 'a', coda: '' };
       
@@ -191,7 +185,7 @@ export class AudioEngine {
       return { onset: '', vowel: lower, coda: '' };
     };
 
-    const getConsonantParams = (c: string) => {
+    const getConsonantParams = (c) => {
         if (!c) return null;
         if (['s', 'sh', 'ch', 'z', 'x', 'c'].some(x => c.includes(x))) {
             return { type: 'fricative', duration: 0.1, filterFreq: 6000, Q: 1 };
@@ -208,15 +202,14 @@ export class AudioEngine {
         return null;
     };
 
-    // Formant mapping based on syllable
-    const getFormants = (v: string) => {
+    const getFormants = (v) => {
       if (v.includes('a')) return [730, 1090, 2440];
       if (v.includes('e')) return [530, 1840, 2480];
       if (v.includes('i')) return [270, 2290, 3010];
       if (v.includes('o')) return [570, 840, 2410];
       if (v.includes('u')) return [300, 870, 2240];
       if (v.includes('y')) return [270, 2290, 3010];
-      return [500, 1500, 2500]; // neutral
+      return [500, 1500, 2500];
     };
     
     const { onset, vowel, coda } = parseSyllable(syllable);
@@ -271,12 +264,11 @@ export class AudioEngine {
         const gate = gateData[startIndex + i];
         
         const freq = minFreq * Math.pow(maxFreq / minFreq, pitch);
-        const gateVal = gate * 0.8; // slightly louder for formants
+        const gateVal = gate * 0.8;
         
         const pointTime = time + i * pointDuration;
         
         if (i === 0) {
-          // Pitch scoop for articulation
           this.leadOsc.frequency.setValueAtTime(freq * 0.8, pointTime);
           this.leadGain.gain.setValueAtTime(gateVal, pointTime);
         } else {
@@ -289,7 +281,7 @@ export class AudioEngine {
     }
   }
 
-  playKick(time: number) {
+  playKick(time) {
     if (!this.ctx || !this.drumBus) return;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -306,7 +298,7 @@ export class AudioEngine {
     osc.stop(time + 0.5);
   }
 
-  playSnare(time: number) {
+  playSnare(time) {
     if (!this.ctx || !this.drumBus) return;
     const osc = this.ctx.createOscillator();
     const oscGain = this.ctx.createGain();
@@ -338,7 +330,7 @@ export class AudioEngine {
     noiseSource.stop(time + 0.2);
   }
 
-  playHiHat(time: number) {
+  playHiHat(time) {
     if (!this.ctx || !this.drumBus) return;
     const noise = this.createNoiseBuffer();
     if (!noise) return;
@@ -367,7 +359,7 @@ export class AudioEngine {
     noiseSource.stop(time + 0.05);
   }
 
-  playClap(time: number) {
+  playClap(time) {
     if (!this.ctx || !this.drumBus) return;
     const noise = this.createNoiseBuffer();
     if (!noise) return;
@@ -398,7 +390,7 @@ export class AudioEngine {
     noiseSource.stop(time + 0.2);
   }
 
-  playBass(time: number, freq: number, params: BassParams) {
+  playBass(time, freq, params) {
     if (!this.ctx || !this.bassGain) return;
     const osc = this.ctx.createOscillator();
     const filter = this.ctx.createBiquadFilter();
@@ -436,3 +428,5 @@ export class AudioEngine {
     return buffer;
   }
 }
+
+window.AudioEngine = AudioEngine;
